@@ -1,41 +1,116 @@
-const graphQL = require('graphql');
-const lodash = require('lodash');
+const graphql = require('graphql');
+const _ = require('lodash');
+const axios = require ("axios");
+
 const {
     GraphQLObjectType,
     GraphQLString,
     GraphQLInt,
-    GraphQLSchema
-} = graphQL
+    GraphQLList,
+    GraphQLSchema,
+    GraphQLNonNull
+} = graphql;
 
-const utilisateurs = [
-    {id: '0', prenom: 'BgrDr0p', age: 23},
-    {id: '1', prenom: 'BgrDr1p', age:32}
-]
+
+
 const UserType = new GraphQLObjectType({
-    name : 'Utilisateur',
-    fields : {
-        id : { type: GraphQLString},
-        prenom : { type: GraphQLString},
-        age : { type: GraphQLInt}
-
-    }
+    name:'User',
+    fields: () => ({
+        id: {type : GraphQLString},
+        firstName: { type: GraphQLString },
+        age: { type: GraphQLInt},
+       company:{
+           type:CompanyType,
+           resolve(parentValue,args){
+           return axios.get(`http://localhost:3000/companies/${parentValue.companyId}`).then( (response) => {
+                return response.data;
+            })
+            
+        }
+       }
+    })
 });
 
-const rootQuery = new GraphQLObjectType({
-
-    name : 'RootQuery',
-    fields : {
-        user : { 
-            type: UserType,
-            args: {id : { type: GraphQLString}},
+const CompanyType = new GraphQLObjectType({
+    name:'Company',
+    fields: () => ({
+        id: {type : GraphQLString},
+        name: { type: GraphQLString },
+        users: {
+            type: new GraphQLList(UserType),
             resolve(parentValue,args){
-                lodash.find(utilisateurs,{id: args.id})
+                return axios.get(`http://localhost:3000/companies/${parentValue.id}/users`).then( (response) => {
+                     return response.data;
+                 })
             }
+        }
+    })
+});
+
+//add utilisateur
+
+const Mutation = new GraphQLObjectType({
+
+    name: 'Mutation',
+    fields:{
+        addUser: {
+            type: UserType,
+            args:{
+                firstName: {type: new GraphQLNonNull(GraphQLString)},
+                age: {type: new GraphQLNonNull(GraphQLInt)},
+                companyId: {type: GraphQLString}
+            },
+            resolve(parentValue,args){
+                return axios.post(`http://localhost:3000/users/`,{firstName: args.firstName,age : args.age, companyId: args.companyId}).then( (response) => {
+                    return response.data;
+                })
+            }
+
+        }
+    },
+    deleteUser:{
+        type: UserType,
+        args: {
+            id: {type: new GraphQLNonNull(GraphQLString)},
+        },
+        resolve(parentValue,args){
+            return axios.delete(`http://localhost:3000/users/${args.id}`).then( (response) => {
+                    return response.data;
+                })
         }
     }
 })
 
-module.exports = new GraphQLSchema({
-    query : rootQuery
-})
 
+
+
+// Permet a graphql d'entrer dans le graph de notre application
+const RootQuery = new GraphQLObjectType({
+    name: 'RootQueryType',
+    fields:{
+        user:{
+            type:UserType,
+            args:{id:{type:GraphQLString}},
+            //  Ici on va récuperer les données avec les parametres en entrée
+            resolve(parentValue,args){
+                return axios.get(`http://localhost:3000/users/${args.id}`).then( (response) => {
+                    return response.data;
+                })
+            }
+        },
+        company:{
+            type:CompanyType,
+            args:{id:{type:GraphQLString}},
+            resolve(parentValue,args){
+                return axios.get(`http://localhost:3000/companies/${args.id}`).then( (response) => {
+                    return response.data;
+                })
+            }
+        }
+    }
+});
+
+module.exports = new GraphQLSchema({
+    query:RootQuery,
+    mutation:Mutation
+});
